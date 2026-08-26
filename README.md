@@ -1912,7 +1912,56 @@ cat deep-in-system.sha1 | cat -e
 > ⚠️ **Ne plus jamais démarrer ni ré-exporter la VM** après ce calcul : la
 > moindre écriture disque change l'empreinte et le rendu ne correspondra plus.
 
-### 12.4 Pousser sur le dépôt
+### 12.4 Vérifier l'OVA — l'étape que tout le monde saute
+
+**`Successfully exported` ne garantit rien.** Lors de cette installation, un
+premier export s'est terminé sur ce message alors que le disque virtuel qu'il
+contenait était corrompu. L'erreur n'apparaît qu'à l'import :
+
+```
+VBoxManage: error: Appliance import failed
+VBoxManage: error: VMDK: Compressed image is corrupted (VERR_ZIP_CORRUPTED)
+```
+
+Le jour de l'audit, l'examinateur n'aurait pas pu démarrer la machine — échec
+avant même la première question. **Le seul contrôle qui vaille est de réimporter
+l'OVA et de le faire tourner**, exactement comme le fera l'auditeur.
+
+```bash
+# 1. Reimporter sous un nom distinct pour ne pas ecraser la VM d'origine
+VBoxManage import ~/deep-in-system.ova --vsys 0 --vmname deep-in-system-VERIF
+
+# 2. La demarrer sans interface graphique
+VBoxManage startvm deep-in-system-VERIF --type headless
+
+# 3. Derouler les controles dessus (voir §17)
+ssh -i ~/.ssh/deep_in_system -p 2222 clecart@192.168.56.10
+
+# 4. Une fois valide, la supprimer avec son disque
+VBoxManage controlvm deep-in-system-VERIF poweroff
+VBoxManage unregistervm deep-in-system-VERIF --delete
+```
+
+Deux enseignements de ce test :
+
+- **Les adresses MAC changent à l'import.** VirtualBox en régénère de nouvelles.
+  La configuration réseau doit donc cibler les **noms d'interfaces**
+  (`enp0s3`, `enp0s8`) et non les adresses MAC : un fichier netplan utilisant
+  `match: macaddress:` laisserait la machine sans réseau chez l'auditeur.
+- **Calculer l'empreinte quand la machine est au repos.** Une lecture faite
+  pendant que VirtualBox écrit ou supprime plusieurs Go renvoie des valeurs
+  incohérentes. Confirmer avec plusieurs lectures et deux outils :
+
+```bash
+sha1sum deep-in-system.ova
+sha1sum deep-in-system.ova
+openssl dgst -sha1 deep-in-system.ova
+```
+
+Les trois doivent concorder. Si ce n'est pas le cas, attendre la fin des
+écritures en cours et recommencer.
+
+### 12.5 Pousser sur le dépôt
 
 ```bash
 cp ~/deep-in-system.sha1 ~/DeepInSystem.sha1 "/home/zone01student/dev/Master Bac +5/deep-in-system/"
