@@ -12,7 +12,7 @@ Il permet de reconstruire le serveur entièrement depuis zéro.
 
 0. [Vue d'ensemble et choix d'architecture](#0-vue-densemble-et-choix-darchitecture)
 1. [Création de la VM et partitionnement](#1-création-de-la-vm-et-partitionnement)
-2. [Première connexion, mise à jour, hostname](#2-première-connexion-mise-à-jour-hostname)
+2. [Première connexion, mise à jour, hostname et clavier](#2-première-connexion-mise-à-jour-hostname-et-clavier)
 3. [Réseau : IP statique, zéro DHCP](#3-réseau--ip-statique-zéro-dhcp)
 4. [SSH : port 2222, root interdit](#4-ssh--port-2222-root-interdit)
 5. [Pare-feu UFW](#5-pare-feu-ufw)
@@ -84,16 +84,45 @@ LVM ajouterait une couche d'abstraction (PV → VG → LV) à expliquer sans auc
 bénéfice ici. On reste sur des partitions classiques, plus simples à auditer
 avec `lsblk`.
 
+### 0.3 Valeurs retenues
+
+Toutes les valeurs concrètes de cette installation, rassemblées ici pour servir
+d'aide-mémoire le jour de l'audit.
+
+| Élément | Valeur |
+|---|---|
+| Système | Ubuntu Server 26.04 LTS (*resolute*) |
+| Nom de la VM | `deep-in-system` |
+| Hostname | `clecart-host` |
+| Utilisateur principal | `clecart` (groupe `sudo`) |
+| Interface NAT | `enp0s3` — `10.0.2.15/24`, passerelle `10.0.2.2` |
+| Interface host-only | `enp0s8` — `192.168.56.10/24`, sans passerelle |
+| DNS | `8.8.8.8`, `1.1.1.1` |
+| Port SSH | `2222` |
+| Clé SSH du projet | `~/.ssh/deep_in_system` sur le poste, installée pour `luffy` |
+| Utilisateurs créés | `luffy` (sudo, clé), `zoro` (mot de passe), `nami` (FTP seul) |
+| Base de données | `wordpress`, utilisateur `wp_user`@`localhost` |
+| Titre du site | `deep-in-system` |
+| Administrateur WordPress | `clecart` |
+| Répertoire de sauvegarde | `/backup` (`750 root:nami`) |
+| Journal de sauvegarde | `/var/log/backup.log` (`644`) |
+
+> Les mots de passe ne figurent volontairement **pas** dans ce fichier : il est
+> versionné et poussé sur le dépôt Git. Les conserver hors du dépôt.
+
 ---
 
 ## 1. Création de la VM et partitionnement
 
 ### 1.1 Télécharger l'ISO
 
-Récupérer la **dernière LTS** de Ubuntu Server sur <https://ubuntu.com/download/server>
-(fichier `ubuntu-XX.04.Y-live-server-amd64.iso`). Les LTS sont supportées 5 ans,
-contrairement aux versions intermédiaires supportées 9 mois — c'est le seul choix
-raisonnable pour un serveur.
+Récupérer la **dernière LTS** de Ubuntu Server sur <https://ubuntu.com/download/server>.
+Les LTS sont supportées 5 ans, contrairement aux versions intermédiaires supportées
+9 mois — c'est le seul choix raisonnable pour un serveur, et la grille d'audit
+l'exige explicitement.
+
+**Version utilisée ici : Ubuntu Server 26.04 LTS** (nom de code *resolute*),
+fichier `ubuntu-26.04-live-server-amd64.iso`, environ 2,8 Go.
 
 Vérifier l'intégrité du téléchargement (bonne pratique, même logique que le
 `sha1sum` demandé au rendu) :
@@ -179,6 +208,26 @@ vont être effacées : c'est un disque virtuel neuf, on confirme).
 À la fin : **Reboot Now**, retirer l'ISO du lecteur optique si VirtualBox ne le
 fait pas seul.
 
+> ⚠️ **Défaut connu de l'installeur** : après avoir tout écrit sur le disque,
+> l'environnement live se démonte lui-même puis n'arrive plus à exécuter son
+> binaire d'extinction. L'écran affiche alors :
+>
+> ```
+> [!!!!!!] Failed to execute shutdown binary.
+> ```
+>
+> **L'installation sur le disque est intacte** — seul le redémarrage échoue. Il
+> suffit d'éteindre la VM de force et de la relancer :
+>
+> ```bash
+> VBoxManage controlvm deep-in-system poweroff
+> VBoxManage modifyvm  deep-in-system --boot1 disk --boot2 dvd
+> VBoxManage startvm   deep-in-system --type gui
+> ```
+>
+> Éjecter aussi le disque du lecteur, sinon la VM redémarre sur l'installeur :
+> `VBoxManage storageattach deep-in-system --storagectl SATA --port 1 --device 0 --type dvddrive --medium emptydrive --forceunmount`
+
 ### 1.5 Vérifier le partitionnement
 
 ```bash
@@ -209,7 +258,7 @@ actives et confirme les 4 Go.
 
 ---
 
-## 2. Première connexion, mise à jour, hostname
+## 2. Première connexion, mise à jour, hostname et clavier
 
 ### 2.1 Mise à jour du système
 
@@ -280,6 +329,83 @@ sudo cp /etc/ssh/sshd_config /root/config-backup/sshd_config.orig
 Convention utilisée dans tout ce document : `.orig` = version d'origine jamais
 modifiée. En cas de service cassé, on restaure et on repart de zéro.
 
+### 2.4 Disposition du clavier de la console
+
+La disposition choisie à l'écran d'accueil de l'installeur s'applique à la
+**console de la VM**. Si elle ne correspond pas au clavier physique, les touches
+ne produisent pas les caractères attendus.
+
+**Vérifier la configuration en vigueur :**
+
+```bash
+cat /etc/default/keyboard
+```
+
+**La passer en français :**
+
+```bash
+sudo sed -i 's/^XKBLAYOUT=.*/XKBLAYOUT="fr"/' /etc/default/keyboard
+sudo setupcon
+sudo loadkeys fr
+```
+
+Trois commandes, trois rôles distincts qu'il faut savoir distinguer :
+
+| Commande | Effet | Persistant ? |
+|---|---|---|
+| Édition de `/etc/default/keyboard` | Déclare la disposition voulue | **Oui** — c'est le seul fichier de référence |
+| `setupcon` | Applique le fichier aux consoles | Non, mais rejoué au démarrage par `console-setup.service` |
+| `loadkeys fr` | Charge la table dans le noyau, immédiatement | **Non** — perdu au redémarrage |
+
+> ⚠️ **`localectl` n'existe pas** sur une installation Ubuntu Server : il est
+> fourni par le paquet `systemd` mais absent de l'image serveur. La commande
+> échoue avec `command not found`. La configuration clavier passe donc
+> obligatoirement par `/etc/default/keyboard`.
+
+**Vérifier le résultat** — la table réellement chargée dans le noyau :
+
+```bash
+sudo dumpkeys | grep -w "keycode  16"
+```
+
+Le *keycode* 16 est la touche située en haut à gauche de la rangée alphabétique :
+elle donne `q` en QWERTY et `a` en AZERTY. La sortie doit afficher `keycode 16 = +a`.
+
+Vérifier aussi que la disposition sera rejouée à chaque démarrage :
+
+```bash
+systemctl is-enabled console-setup.service    # -> enabled
+```
+
+### ⚠️ Le piège du mot de passe saisi dans la mauvaise disposition
+
+Sur un clavier français, **les chiffres s'obtiennent avec `Shift`** : la rangée
+du haut donne `&é"'(-è_çà` sans modificateur. Sur une console en QWERTY, ces
+mêmes touches physiques donnent directement les chiffres, et `Shift` donne la
+ponctuation.
+
+Conséquence : un mot de passe saisi à l'installation en croyant taper
+`Rouen76Serveur` sur une console QWERTY produit en réalité **`Rouen&^Serveur`**
+— `Shift+7` donne `&`, `Shift+6` donne `^`. Le mot de passe enregistré n'est pas
+celui qu'on croit, et l'erreur ne se révèle qu'à la première connexion depuis
+une autre machine.
+
+Deux protections :
+
+1. **Choisir un mot de passe sans caractère ambigu** : uniquement des lettres et
+   des chiffres, en évitant `a`, `q`, `z`, `w`, `m` et `y`, qui changent de
+   position entre AZERTY, QWERTY et QWERTZ. Toutes les autres lettres tombent sur
+   la même touche physique dans les trois dispositions.
+2. **En cas de doute, réécrire le mot de passe sans passer par un clavier** :
+
+```bash
+echo 'clecart:NouveauMotDePasse' | sudo chpasswd
+```
+
+`chpasswd` lit des couples `utilisateur:mot_de_passe` sur l'entrée standard et
+écrit directement le condensat dans `/etc/shadow`. Aucune disposition clavier
+n'intervient : ce qui est écrit est exactement ce qui sera attendu.
+
 ---
 
 ## 3. Réseau : IP statique, zéro DHCP
@@ -332,8 +458,14 @@ On écarte le fichier généré par l'installeur (netplan lit **tous** les `*.ya
 du répertoire ; renommer l'extension suffit à l'ignorer) :
 
 ```bash
-sudo mv /etc/netplan/50-cloud-init.yaml /root/config-backup/50-cloud-init.yaml.orig
+sudo mkdir -p /root/config-backup
+sudo cp /etc/netplan/00-installer-config.yaml /root/config-backup/00-installer-config.yaml.orig
+sudo mv /etc/netplan/00-installer-config.yaml /root/config-backup/00-installer-config.yaml.disabled
 ```
+
+> Le nom de ce fichier varie selon la version : `00-installer-config.yaml` sur
+> 26.04, `50-cloud-init.yaml` sur les versions antérieures. Vérifier avec
+> `ls /etc/netplan/` plutôt que de supposer.
 
 Puis on crée notre fichier :
 
@@ -690,9 +822,14 @@ Vérification :
 
 ```bash
 id luffy
-groups luffy
+groups luffy             # -> luffy : luffy sudo
 getent passwd luffy      # -> luffy:x:1001:1001::/home/luffy:/bin/bash
 ```
+
+> ⚠️ Selon la configuration de `/etc/adduser.conf`, `adduser` peut ajouter le
+> compte à un groupe supplémentaire `users`. La grille d'audit attend exactement
+> `luffy : luffy sudo` et `zoro : zoro` : si `groups` affiche un groupe en trop,
+> le retirer avec `sudo gpasswd -d luffy users`.
 
 `getent passwd` interroge la base des comptes (fichier `/etc/passwd` + éventuels
 annuaires) : c'est plus fiable qu'un `grep` sur le fichier.
@@ -1730,10 +1867,28 @@ VMDK. C'est un format ouvert, réimportable dans VirtualBox comme dans VMware.
 
 ```bash
 cd ~
+sync                                              # <- indispensable, voir ci-dessous
 sha1sum deep-in-system.ova > deep-in-system.sha1
 cp deep-in-system.sha1 DeepInSystem.sha1
 cat deep-in-system.sha1 | cat -e
 ```
+
+> ⚠️ **Le `sync` n'est pas décoratif.** `VBoxManage export` rend la main dès que
+> l'écriture est *demandée*, pas terminée : sur un fichier de plusieurs Go, une
+> partie reste dans le cache d'écriture du noyau. Une empreinte calculée
+> immédiatement porte alors sur un fichier incomplet — et ne correspondra plus
+> une fois les données réellement écrites.
+>
+> Cette erreur fait échouer **la toute première question de l'audit** (« *Is the
+> SHA1 of the provided machine the same as the machine being audited?* »).
+> `sync` force le vidage des caches. Vérifier ensuite la stabilité :
+>
+> ```bash
+> sha1sum deep-in-system.ova ; sha1sum deep-in-system.ova
+> ```
+>
+> Les deux lignes doivent être identiques. On peut aussi recouper avec un autre
+> outil : `openssl dgst -sha1 deep-in-system.ova`.
 
 > ⚠️ **Le sujet et la grille d'audit ne donnent pas le même nom de fichier.**
 > Le sujet demande `deep-in-system.sha1`, la grille d'audit vérifie la présence
