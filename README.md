@@ -2293,6 +2293,10 @@ DeepInSystem.sha1
 README.md
 deep-in-system.sha1
 
+$ sha1sum deep-in-system.ova > deep-in-system-toaudit.sha1
+$ diff deep-in-system.sha1  deep-in-system-toaudit.sha1 ; echo $?
+0
+
 $ alias                       # rien d'autre que les alias par defaut d'Ubuntu
 $ dpkg -l ubuntu-desktop
 dpkg-query: no packages found matching ubuntu-desktop
