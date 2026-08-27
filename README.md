@@ -2023,10 +2023,17 @@ sudo deluser --remove-home testuser
 
 ## 15. Questions d'audit — réponses types
 
-La grille contient neuf questions de compréhension notées séparément. Voici les
-réponses attendues.
+La grille contient dix questions de compréhension notées séparément. Chaque
+entrée ci-dessous suit le même format : le titre reprend la question en
+français, l'encadré « ❓ » cite la question **telle qu'elle figure dans la
+grille officielle** (en anglais), et tout ce qui suit « ✅ Réponse » est la
+réponse à donner à l'oral.
 
 ### 15.1 « Qu'est-ce que le groupe sudo sous Linux ? »
+
+> ❓ **Question de la grille :** *Does the student can explain what is sudo group in Linux?*
+
+✅ **Réponse :**
 
 `sudo` permet d'exécuter **une commande précise** avec les privilèges d'un autre
 utilisateur, root par défaut. Qui a le droit de l'utiliser est défini dans
@@ -2061,6 +2068,10 @@ monde, y compris pour le réparer.
 
 ### 15.2 « Expliquez votre configuration réseau »
 
+> ❓ **Question de la grille :** *The student must show the file that was modified to set a static IP address. Does the student can explain the configuration?*
+
+✅ **Réponse :**
+
 Fichier à montrer : `/etc/netplan/01-static-config.yaml` (détaillé en
 [§3.3](#33-écrire-la-configuration-statique)). Points à énoncer :
 
@@ -2074,6 +2085,10 @@ Fichier à montrer : `/etc/netplan/01-static-config.yaml` (détaillé en
    sans lequel **cloud-init réécrirait tout au prochain démarrage**.
 
 ### 15.3 « Qu'est-ce qu'un masque de sous-réseau (netmask) ? »
+
+> ❓ **Question de la grille :** *Does the student What is a netmask?*
+
+✅ **Réponse :**
 
 Une adresse IPv4 fait 32 bits. Le masque indique **où couper** cette adresse
 entre une **partie réseau** (commune à toutes les machines du même lien) et une
@@ -2107,6 +2122,10 @@ entre « livraison directe » et « passage par le routeur ».
 
 ### 15.4 « Pourquoi une adresse IP statique est-elle importante pour un serveur web ? »
 
+> ❓ **Question de la grille :** *Can The student explain why a static IP address is important for a web server?*
+
+✅ **Réponse :**
+
 Parce qu'un serveur est, par définition, la partie **que les clients doivent
 pouvoir retrouver**. Si son adresse change, plus rien ne le joint.
 
@@ -2129,6 +2148,10 @@ indisponible au démarrage, un serveur en DHCP peut se retrouver sans adresse du
 tout.
 
 ### 15.5 « Qu'est-ce qu'un serveur SSH et quel est son rôle ? »
+
+> ❓ **Question de la grille :** *Does the student can explain what is ssh server and what the role of it?*
+
+✅ **Réponse :**
 
 SSH (*Secure Shell*) est un protocole d'accès distant **chiffré**. Le programme
 serveur, `sshd`, écoute sur un port (22 par défaut, **2222** ici) et ouvre, pour
@@ -2156,6 +2179,10 @@ Ici, c'est l'unique canal d'administration du serveur, d'où son durcissement :
 port déplacé, root interdit, `luffy` restreint à l'authentification par clé.
 
 ### 15.6 « Qu'est-ce qu'un pare-feu et quel est son rôle sur un serveur ? »
+
+> ❓ **Question de la grille :** *Does the student can explain what is firewall and what the role of it in a server?*
+
+✅ **Réponse :**
 
 Un pare-feu filtre les paquets réseau selon des règles portant sur l'adresse
 source et destination, le port, le protocole et l'état de la connexion. Sous
@@ -2185,6 +2212,10 @@ mises à jour, `DISALLOW_FILE_EDIT`, utilisateur MySQL à privilèges limités.
 
 ### 15.7 « Justifiez chaque port ouvert »
 
+> ❓ **Question de la grille :** *Ask the student to justify why each open port is open. Are all open ports justified?*
+
+✅ **Réponse :**
+
 Voir le tableau complet en
 [§12](#12-récapitulatif-des-ports-ouverts-justification-audit).
 
@@ -2196,6 +2227,10 @@ passif). Tout le reste est fermé par la politique par défaut, **et notamment l
 WordPress tourne sur la même machine.
 
 ### 15.8 « Qu'est-ce qu'un serveur FTP et quel est son rôle ? »
+
+> ❓ **Question de la grille :** *Does the student can explain what is FTP Server and what the role of it?*
+
+✅ **Réponse :**
 
 FTP (*File Transfer Protocol*, RFC 959) est un protocole dédié au **transfert de
 fichiers** entre un client et un serveur : lister un répertoire, télécharger,
@@ -2223,6 +2258,10 @@ dans un tunnel SSH, sans rapport avec FTP malgré le nom).
 
 ### 15.9 « Qu'est-ce qu'une tâche cron et quel est son rôle ? »
 
+> ❓ **Question de la grille :** *Does the student can explain what is cronjob and what the role of it?*
+
+✅ **Réponse :**
+
 `cron` est le **planificateur de tâches** d'Unix. Le démon `cron` se réveille
 chaque minute, lit les tables de tâches (*crontabs*) et exécute les commandes
 dont l'échéance est atteinte.
@@ -2247,6 +2286,10 @@ Les deux pièges classiques, tous deux traités dans le script :
    le `trap ERR`.
 
 ### 15.10 « Pourquoi les sauvegardes sont-elles importantes ? »
+
+> ❓ **Question de la grille :** *Does the student can explain why backup is important?*
+
+✅ **Réponse :**
 
 Parce qu'une sauvegarde est **le seul moyen de revenir à un état antérieur
 connu**. Aucune autre mesure de sécurité ne le permet.
