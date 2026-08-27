@@ -21,14 +21,13 @@ Il permet de reconstruire le serveur entièrement depuis zéro.
 8. [Base de données MySQL](#8-base-de-données-mysql)
 9. [WordPress](#9-wordpress)
 10. [Sauvegarde automatique par cron](#10-sauvegarde-automatique-par-cron)
-11. [Bonus](#11-bonus)
-12. [Export OVA, sha1 et rendu](#12-export-ova-sha1-et-rendu)
-13. [Récapitulatif des ports ouverts (justification audit)](#13-récapitulatif-des-ports-ouverts-justification-audit)
-14. [Mémo audit : créer l'utilisateur kratos en moins de 10 minutes](#14-mémo-audit--créer-lutilisateur-kratos-en-moins-de-10-minutes)
-15. [Checklist finale avant audit](#15-checklist-finale-avant-audit)
-16. [Questions d'audit — réponses types](#16-questions-daudit--réponses-types)
-17. [Grille d'audit officielle — commandes et sorties attendues](#17-grille-daudit-officielle--commandes-et-sorties-attendues)
-18. [Glossaire des commandes](#18-glossaire-des-commandes)
+11. [Export OVA, sha1 et rendu](#11-export-ova-sha1-et-rendu)
+12. [Récapitulatif des ports ouverts (justification audit)](#12-récapitulatif-des-ports-ouverts-justification-audit)
+13. [Mémo audit : créer l'utilisateur kratos en moins de 10 minutes](#13-mémo-audit--créer-lutilisateur-kratos-en-moins-de-10-minutes)
+14. [Checklist finale avant audit](#14-checklist-finale-avant-audit)
+15. [Questions d'audit — réponses types](#15-questions-daudit--réponses-types)
+16. [Grille d'audit officielle — commandes et sorties attendues](#16-grille-daudit-officielle--commandes-et-sorties-attendues)
+17. [Glossaire des commandes](#17-glossaire-des-commandes)
 
 ---
 
@@ -736,7 +735,7 @@ sudo ufw status numbered   # numérote les règles, pour pouvoir en supprimer un
 
 ### 5.2 Pourquoi ces ports, et pourquoi pas les autres
 
-Voir le [récapitulatif détaillé](#13-récapitulatif-des-ports-ouverts-justification-audit).
+Voir le [récapitulatif détaillé](#12-récapitulatif-des-ports-ouverts-justification-audit).
 En résumé : `2222` (administration), `80` (le site), `21` + `40000-40100` (FTP).
 Le port `3306` de MySQL n'est **pas** ouvert : la base n'est utilisée que par
 WordPress, qui tourne sur la même machine et passe par `127.0.0.1`. Le port `22`
@@ -895,26 +894,6 @@ Test depuis l'hôte (authentification par mot de passe) :
 ```bash
 ssh -p 2222 zoro@192.168.56.10
 ```
-
-### 6.4 Politique de mots de passe (bonne pratique)
-
-```bash
-sudo apt install -y libpam-pwquality
-sudo nano /etc/security/pwquality.conf
-```
-
-```
-minlen = 10
-dcredit = -1      # au moins 1 chiffre
-ucredit = -1      # au moins 1 majuscule
-lcredit = -1      # au moins 1 minuscule
-retry = 3
-```
-
-PAM (*Pluggable Authentication Modules*) est la couche d'authentification
-commune à tous les services Linux (login console, `sudo`, SSH, vsftpd…). Le
-module `pam_pwquality` refuse les mots de passe trop faibles **au moment où ils
-sont définis**.
 
 ---
 
@@ -1693,116 +1672,9 @@ ftp> bye
 
 ---
 
-## 11. Bonus
+## 11. Export OVA, sha1 et rendu
 
-### 11.1 HTTPS avec un certificat auto-signé
-
-```bash
-sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-  -keyout /etc/ssl/private/clecart-host.key \
-  -out /etc/ssl/certs/clecart-host.crt \
-  -subj "/C=FR/ST=Normandie/L=Rouen/O=Zone01/CN=clecart-host"
-
-sudo chmod 600 /etc/ssl/private/clecart-host.key
-sudo a2enmod ssl
-sudo a2ensite default-ssl
-```
-
-| Option | Rôle |
-|---|---|
-| `req -x509` | Génère directement un certificat auto-signé (au lieu d'une demande de signature à envoyer à une autorité) |
-| `-nodes` | *No DES* : ne chiffre pas la clé privée par une passphrase, sinon Apache la réclamerait à chaque démarrage |
-| `-newkey rsa:2048` | Crée en même temps une clé RSA de 2048 bits |
-| `-days 365` | Validité d'un an |
-| `-subj` | Renseigne le sujet du certificat sans questions interactives. `CN` = *Common Name*, le nom d'hôte servi |
-
-Éditer `/etc/apache2/sites-available/default-ssl.conf` pour pointer
-`SSLCertificateFile` et `SSLCertificateKeyFile` vers ces deux fichiers, puis :
-
-```bash
-sudo ufw allow 443/tcp comment 'HTTPS'
-sudo apache2ctl configtest && sudo systemctl reload apache2
-```
-
-Le navigateur affichera un avertissement : le certificat n'est signé par aucune
-autorité reconnue. Le **chiffrement** est pourtant bien réel — ce qui manque est
-l'**authentification** de l'identité du serveur.
-
-### 11.2 FTPS (FTP sur TLS)
-
-Dans `/etc/vsftpd.conf` :
-
-```ini
-ssl_enable=YES
-rsa_cert_file=/etc/ssl/certs/clecart-host.crt
-rsa_private_key_file=/etc/ssl/private/clecart-host.key
-force_local_logins_ssl=YES
-force_local_data_ssl=YES
-ssl_tlsv1_2=YES
-ssl_sslv2=NO
-ssl_sslv3=NO
-require_ssl_reuse=NO
-```
-
-Sans TLS, **FTP transmet l'identifiant et le mot de passe en clair** sur le
-réseau. `force_local_logins_ssl` rend le chiffrement obligatoire pour
-l'authentification, `force_local_data_ssl` pour le transfert des fichiers.
-
-```bash
-sudo systemctl restart vsftpd
-```
-
-Se connecter ensuite avec un client compatible (FileZilla en « FTP explicite sur
-TLS », ou `lftp -u nami -e "set ftp:ssl-force true" 192.168.56.10`).
-
-### 11.3 fail2ban
-
-```bash
-sudo apt install -y fail2ban
-sudo nano /etc/fail2ban/jail.local
-```
-
-```ini
-[DEFAULT]
-bantime  = 1h
-findtime = 10m
-maxretry = 5
-
-[sshd]
-enabled = true
-port    = 2222
-
-[vsftpd]
-enabled = true
-```
-
-`fail2ban` surveille les journaux d'authentification et bannit dynamiquement
-(via le pare-feu) toute IP qui échoue 5 fois en 10 minutes. C'est le complément
-naturel de `MaxAuthTries` : la contre-mesure passe du niveau applicatif au
-niveau réseau.
-
-```bash
-sudo systemctl restart fail2ban
-sudo fail2ban-client status sshd
-```
-
-### 11.4 Idées supplémentaires
-
-- **Serveur Minecraft** encapsulé dans une unité `systemd` (`Restart=always`,
-  `WantedBy=multi-user.target`) pour redémarrer automatiquement après un reboot.
-- **Ansible** : rejouer l'intégralité de cette configuration sous forme de rôles
-  (`network`, `ssh`, `firewall`, `users`, `ftp`, `mysql`, `wordpress`, `backup`)
-  afin de reconstruire un serveur identique en une commande.
-- **`unattended-upgrades`** pour l'application automatique des correctifs de
-  sécurité.
-- **`aide`** ou **`auditd`** pour la détection de modification de fichiers
-  système.
-
----
-
-## 12. Export OVA, sha1 et rendu
-
-### 12.0 Contrôles exigés par la grille d'audit
+### 11.0 Contrôles exigés par la grille d'audit
 
 **La distribution doit être un Ubuntu Server LTS, pas un Desktop :**
 
@@ -1836,7 +1708,7 @@ sudo -u luffy bash -ic alias
 sudo bash -ic alias
 ```
 
-### 12.1 Préparer la VM
+### 11.1 Préparer la VM
 
 ```bash
 sudo apt update && sudo apt upgrade -y
@@ -1849,7 +1721,7 @@ sudo poweroff
 La VM doit être **éteinte proprement** avant l'export : un export à chaud
 produit une image dont le système de fichiers n'est pas cohérent.
 
-### 12.2 Exporter
+### 11.2 Exporter
 
 En ligne de commande sur l'hôte :
 
@@ -1863,7 +1735,7 @@ Le format **OVA** (*Open Virtualization Appliance*) est une archive `tar`
 contenant le descripteur OVF (matériel virtuel, réseau) et le disque au format
 VMDK. C'est un format ouvert, réimportable dans VirtualBox comme dans VMware.
 
-### 12.3 Calculer et publier l'empreinte
+### 11.3 Calculer et publier l'empreinte
 
 ```bash
 cd ~
@@ -1912,7 +1784,7 @@ cat deep-in-system.sha1 | cat -e
 > ⚠️ **Ne plus jamais démarrer ni ré-exporter la VM** après ce calcul : la
 > moindre écriture disque change l'empreinte et le rendu ne correspondra plus.
 
-### 12.4 Vérifier l'OVA — l'étape que tout le monde saute
+### 11.4 Vérifier l'OVA — l'étape que tout le monde saute
 
 **`Successfully exported` ne garantit rien.** Lors de cette installation, un
 premier export s'est terminé sur ce message alors que le disque virtuel qu'il
@@ -1934,7 +1806,7 @@ VBoxManage import ~/deep-in-system.ova --vsys 0 --vmname deep-in-system-VERIF
 # 2. La demarrer sans interface graphique
 VBoxManage startvm deep-in-system-VERIF --type headless
 
-# 3. Derouler les controles dessus (voir §17)
+# 3. Derouler les controles dessus (voir §16)
 ssh -i ~/.ssh/deep_in_system -p 2222 clecart@192.168.56.10
 
 # 4. Une fois valide, la supprimer avec son disque
@@ -1961,7 +1833,7 @@ openssl dgst -sha1 deep-in-system.ova
 Les trois doivent concorder. Si ce n'est pas le cas, attendre la fin des
 écritures en cours et recommencer.
 
-### 12.5 Pousser sur le dépôt
+### 11.5 Pousser sur le dépôt
 
 ```bash
 cp ~/deep-in-system.sha1 ~/DeepInSystem.sha1 "/home/zone01student/dev/Master Bac +5/deep-in-system/"
@@ -1985,7 +1857,7 @@ conservé à part et apporté le jour de l'audit.
 
 ---
 
-## 13. Récapitulatif des ports ouverts (justification audit)
+## 12. Récapitulatif des ports ouverts (justification audit)
 
 ```bash
 sudo ufw status verbose
@@ -1997,7 +1869,6 @@ sudo ufw status verbose
 | **80** | TCP | Apache / WordPress | Le site doit être servi sur `http://{host}/` — c'est la raison d'être du serveur |
 | **21** | TCP | vsftpd (contrôle) | Canal de commandes FTP. Nécessaire pour que `nami` récupère les sauvegardes. Accès anonyme désactivé, liste blanche d'un seul compte, lecture seule |
 | **40000-40100** | TCP | vsftpd (données passives) | En mode passif, le transfert de fichiers utilise un second port choisi dans cette plage. Sans elle, aucun téléchargement ne peut aboutir. La plage est volontairement étroite (101 ports) |
-| **443** | TCP | Apache TLS | *Uniquement si le bonus HTTPS est activé* |
 
 **Ports volontairement fermés :**
 
@@ -2013,7 +1884,7 @@ joindre les dépôts `apt` (mises à jour de sécurité), le DNS et NTP.
 
 ---
 
-## 14. Mémo audit : créer l'utilisateur kratos en moins de 10 minutes
+## 13. Mémo audit : créer l'utilisateur kratos en moins de 10 minutes
 
 > **Cette épreuve est éliminatoire.** La grille est explicite : *« If the student
 > can't solve this exam, he must directly fail in this project. »* Le compte
@@ -2087,7 +1958,7 @@ sudo deluser --remove-home testuser
 
 ---
 
-## 15. Checklist finale avant audit
+## 14. Checklist finale avant audit
 
 | # | Vérification | Commande | Bloc d'audit |
 |---|---|---|---|
@@ -2109,7 +1980,7 @@ sudo deluser --remove-home testuser
 | 16 | luffy : `luffy : luffy sudo` et home `/home/luffy` | `groups luffy` ; `echo ~` ; `echo $HOME` | Users |
 | 17 | zoro : connexion par mot de passe | `ssh -p 2222 zoro@…` | Users |
 | 18 | zoro : sudo refusé, pas dans le groupe sudo | `sudo cat /etc/shadow` ; `groups zoro` | Users |
-| 19 | **Épreuve `kratos` réussie en < 10 min** | voir [§14](#14-mémo-audit--créer-lutilisateur-kratos-en-moins-de-10-minutes) | Users |
+| 19 | **Épreuve `kratos` réussie en < 10 min** | voir [§13](#13-mémo-audit--créer-lutilisateur-kratos-en-moins-de-10-minutes) | Users |
 | 20 | Fichier créé par l'auditeur visible et téléchargeable en FTP | `sudo touch /backup/audit-check` puis `get` | Services |
 | 21 | FTP anonyme refusé (mot de passe vide) | login `anonymous` → `530 Login incorrect` | Services |
 | 22 | WordPress fonctionnel, connexion admin, publication | navigateur sur `http://192.168.56.10/` | WordPress |
@@ -2117,7 +1988,7 @@ sudo deluser --remove-home testuser
 | 24 | Cron `0 0 * * *` créant un tar de la base dans `/backup` | `sudo crontab -l` | Backup |
 | 25 | Test `* * * * *` : archive du jour visible en FTP | vider `/backup`, attendre 1 min | Backup |
 | 26 | `/var/log/backup.log` lisible **sans sudo**, succès + horodatage | `cat /var/log/backup.log` | Backup |
-| 27 | Savoir répondre aux questions de cours | voir [§16](#16-questions-daudit--réponses-types) | Toutes |
+| 27 | Savoir répondre aux questions de cours | voir [§15](#15-questions-daudit--réponses-types) | Toutes |
 | 28 | Tout survit à un redémarrage | `sudo reboot` puis rejouer 1 à 27 | Toutes |
 
 > Le point **28** est le plus important : la quasi-totalité des échecs d'audit
@@ -2134,12 +2005,12 @@ sudo deluser --remove-home testuser
 
 ---
 
-## 16. Questions d'audit — réponses types
+## 15. Questions d'audit — réponses types
 
 La grille contient neuf questions de compréhension notées séparément. Voici les
 réponses attendues.
 
-### 16.1 « Qu'est-ce que le groupe sudo sous Linux ? »
+### 15.1 « Qu'est-ce que le groupe sudo sous Linux ? »
 
 `sudo` permet d'exécuter **une commande précise** avec les privilèges d'un autre
 utilisateur, root par défaut. Qui a le droit de l'utiliser est défini dans
@@ -2172,7 +2043,7 @@ un refus de permission.
 avant d'enregistrer : un fichier `sudoers` invalide bloque `sudo` pour tout le
 monde, y compris pour le réparer.
 
-### 16.2 « Expliquez votre configuration réseau »
+### 15.2 « Expliquez votre configuration réseau »
 
 Fichier à montrer : `/etc/netplan/01-static-config.yaml` (détaillé en
 [§3.3](#33-écrire-la-configuration-statique)). Points à énoncer :
@@ -2186,7 +2057,7 @@ Fichier à montrer : `/etc/netplan/01-static-config.yaml` (détaillé en
 4. Il faut aussi montrer `/etc/cloud/cloud.cfg.d/99-disable-network-config.cfg`,
    sans lequel **cloud-init réécrirait tout au prochain démarrage**.
 
-### 16.3 « Qu'est-ce qu'un masque de sous-réseau (netmask) ? »
+### 15.3 « Qu'est-ce qu'un masque de sous-réseau (netmask) ? »
 
 Une adresse IPv4 fait 32 bits. Le masque indique **où couper** cette adresse
 entre une **partie réseau** (commune à toutes les machines du même lien) et une
@@ -2218,7 +2089,7 @@ résultat à son propre réseau.
 Le masque est donc ce qui permet à une machine de décider, pour chaque paquet,
 entre « livraison directe » et « passage par le routeur ».
 
-### 16.4 « Pourquoi une adresse IP statique est-elle importante pour un serveur web ? »
+### 15.4 « Pourquoi une adresse IP statique est-elle importante pour un serveur web ? »
 
 Parce qu'un serveur est, par définition, la partie **que les clients doivent
 pouvoir retrouver**. Si son adresse change, plus rien ne le joint.
@@ -2241,7 +2112,7 @@ Ajoutons que le service DHCP devient un point de défaillance unique : s'il est
 indisponible au démarrage, un serveur en DHCP peut se retrouver sans adresse du
 tout.
 
-### 16.5 « Qu'est-ce qu'un serveur SSH et quel est son rôle ? »
+### 15.5 « Qu'est-ce qu'un serveur SSH et quel est son rôle ? »
 
 SSH (*Secure Shell*) est un protocole d'accès distant **chiffré**. Le programme
 serveur, `sshd`, écoute sur un port (22 par défaut, **2222** ici) et ouvre, pour
@@ -2268,7 +2139,7 @@ de fichiers), `rsync` sur SSH, redirections de ports (tunnels), `git`.
 Ici, c'est l'unique canal d'administration du serveur, d'où son durcissement :
 port déplacé, root interdit, `luffy` restreint à l'authentification par clé.
 
-### 16.6 « Qu'est-ce qu'un pare-feu et quel est son rôle sur un serveur ? »
+### 15.6 « Qu'est-ce qu'un pare-feu et quel est son rôle sur un serveur ? »
 
 Un pare-feu filtre les paquets réseau selon des règles portant sur l'adresse
 source et destination, le port, le protocole et l'état de la connexion. Sous
@@ -2296,10 +2167,10 @@ service qu'on a volontairement exposé. Le port 80 est ouvert, donc une
 vulnérabilité de WordPress reste exploitable. D'où les autres mesures :
 mises à jour, `DISALLOW_FILE_EDIT`, utilisateur MySQL à privilèges limités.
 
-### 16.7 « Justifiez chaque port ouvert »
+### 15.7 « Justifiez chaque port ouvert »
 
 Voir le tableau complet en
-[§13](#13-récapitulatif-des-ports-ouverts-justification-audit).
+[§12](#12-récapitulatif-des-ports-ouverts-justification-audit).
 
 Formulation courte : **2222** (SSH, seul canal d'administration), **80** (le site
 WordPress, raison d'être du serveur), **21** (canal de contrôle FTP pour que
@@ -2308,7 +2179,7 @@ passif). Tout le reste est fermé par la politique par défaut, **et notamment l
 3306 de MySQL**, qui n'a aucune raison d'être joignable de l'extérieur puisque
 WordPress tourne sur la même machine.
 
-### 16.8 « Qu'est-ce qu'un serveur FTP et quel est son rôle ? »
+### 15.8 « Qu'est-ce qu'un serveur FTP et quel est son rôle ? »
 
 FTP (*File Transfer Protocol*, RFC 959) est un protocole dédié au **transfert de
 fichiers** entre un client et un serveur : lister un répertoire, télécharger,
@@ -2331,11 +2202,10 @@ en lecture seule et sans lui donner le moindre accès au reste du système —
 `nami` n'a pas de shell et est enfermé par *chroot* dans `/backup`.
 
 **Sa limite, à savoir dire** : FTP transmet **les identifiants et les données en
-clair**. En production on utilise **FTPS** (FTP sur TLS, cf.
-[§11.2](#112-ftps-ftp-sur-tls)) ou **SFTP** (transfert dans un tunnel SSH, sans
-rapport avec FTP malgré le nom).
+clair**. En production on utilise **FTPS** (FTP sur TLS) ou **SFTP** (transfert
+dans un tunnel SSH, sans rapport avec FTP malgré le nom).
 
-### 16.9 « Qu'est-ce qu'une tâche cron et quel est son rôle ? »
+### 15.9 « Qu'est-ce qu'une tâche cron et quel est son rôle ? »
 
 `cron` est le **planificateur de tâches** d'Unix. Le démon `cron` se réveille
 chaque minute, lit les tables de tâches (*crontabs*) et exécute les commandes
@@ -2360,7 +2230,7 @@ Les deux pièges classiques, tous deux traités dans le script :
    fichier, un échec passe totalement inaperçu — d'où `/var/log/backup.log` et
    le `trap ERR`.
 
-### 16.10 « Pourquoi les sauvegardes sont-elles importantes ? »
+### 15.10 « Pourquoi les sauvegardes sont-elles importantes ? »
 
 Parce qu'une sauvegarde est **le seul moyen de revenir à un état antérieur
 connu**. Aucune autre mesure de sécurité ne le permet.
@@ -2394,7 +2264,7 @@ en [§10.3](#103-tester-le-script-avant-de-le-planifier).
 
 ---
 
-## 17. Grille d'audit officielle — commandes et sorties attendues
+## 16. Grille d'audit officielle — commandes et sorties attendues
 
 Sorties littérales que l'auditeur va observer. À vérifier une dernière fois
 **après un redémarrage complet**.
@@ -2495,7 +2365,7 @@ zoro@clecart-host:~$ echo $HOME
 ```
 
 Puis l'épreuve `kratos` : voir
-[§14](#14-mémo-audit--créer-lutilisateur-kratos-en-moins-de-10-minutes).
+[§13](#13-mémo-audit--créer-lutilisateur-kratos-en-moins-de-10-minutes).
 
 ### Services
 
@@ -2562,7 +2432,7 @@ $ cat /var/log/backup.log
 
 ---
 
-## 18. Glossaire des commandes
+## 17. Glossaire des commandes
 
 ### Système et services
 
