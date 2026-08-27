@@ -356,10 +356,13 @@ Trois commandes, trois rôles distincts qu'il faut savoir distinguer :
 | `setupcon` | Applique le fichier aux consoles | Non, mais rejoué au démarrage par `console-setup.service` |
 | `loadkeys fr` | Charge la table dans le noyau, immédiatement | **Non** — perdu au redémarrage |
 
-> ⚠️ **`localectl` n'existe pas** sur une installation Ubuntu Server : il est
-> fourni par le paquet `systemd` mais absent de l'image serveur. La commande
-> échoue avec `command not found`. La configuration clavier passe donc
-> obligatoirement par `/etc/default/keyboard`.
+> ⚠️ **`localectl set-keymap` ne suffit pas sur Ubuntu Server.** La commande
+> existe bien (`/usr/bin/localectl`), mais elle écrit dans `/etc/vconsole.conf`,
+> fichier que la console d'Ubuntu **ne lit pas** : c'est `console-setup` qui pilote
+> le clavier, à partir de `/etc/default/keyboard`. Après un `localectl set-keymap fr`,
+> `localectl status` affiche encore `VC Keymap: (unset)` et la console reste en
+> QWERTY. La configuration passe donc obligatoirement par `/etc/default/keyboard`,
+> suivi de `setupcon`.
 
 **Vérifier le résultat** — la table réellement chargée dans le noyau :
 
@@ -384,10 +387,11 @@ mêmes touches physiques donnent directement les chiffres, et `Shift` donne la
 ponctuation.
 
 Conséquence : un mot de passe saisi à l'installation en croyant taper
-`Rouen76Serveur` sur une console QWERTY produit en réalité **`Rouen&^Serveur`**
+`Exemple76Serveur` sur une console QWERTY produit en réalité **`Exemple&^Serveur`**
 — `Shift+7` donne `&`, `Shift+6` donne `^`. Le mot de passe enregistré n'est pas
 celui qu'on croit, et l'erreur ne se révèle qu'à la première connexion depuis
-une autre machine.
+une autre machine. C'est exactement ce qui s'est produit sur cette installation :
+le mot de passe réel a dû être réécrit avec `chpasswd`, méthode décrite ci-dessous.
 
 Deux protections :
 
@@ -1055,7 +1059,7 @@ Une fois connecté :
 ```
 ftp> pwd            # -> "/" : la racine vue par nami est en réalité /backup
 ftp> ls             # les archives de sauvegarde sont listées
-ftp> get wordpress-db-2026-08-25_00-00-01.tar.gz     # doit réussir
+ftp> get wordpress-2026-08-25_00-00-01.tar.gz        # doit réussir
 ftp> put /etc/hosts test.txt                         # doit ÉCHOUER : 550 Permission denied
 ftp> cd ..          # reste bloqué à la racine : le chroot fonctionne
 ftp> bye
@@ -1095,7 +1099,7 @@ Réponses recommandées :
 
 | Question | Réponse | Pourquoi |
 |---|---|---|
-| Setup VALIDATE PASSWORD component ? | `y`, niveau `MEDIUM` | Refuse les mots de passe faibles pour les comptes SQL |
+| Setup VALIDATE PASSWORD component ? | **`n`** | Ce composant exigerait un caractère spécial dans tout mot de passe SQL. Le seul compte concerné est `wp_user`, dont le mot de passe n'est jamais saisi au clavier : il vit dans `wp-config.php` |
 | Change the password for root ? | **`n`** | Voir explication ci-dessous |
 | Remove anonymous users ? | `y` | Les comptes anonymes permettent de se connecter sans identifiant |
 | Disallow root login remotely ? | `y` | **Exigence du sujet** |
@@ -1216,7 +1220,7 @@ mysql -h 192.168.56.10 -u wp_user -p    # -> Can't connect / connection refused
 
 ```bash
 sudo apt install -y apache2 php libapache2-mod-php php-mysql \
-  php-curl php-gd php-xml php-mbstring php-zip php-intl php-imagick
+  php-curl php-gd php-xml php-mbstring php-zip php-intl
 ```
 
 | Paquet | Rôle |
@@ -1224,7 +1228,7 @@ sudo apt install -y apache2 php libapache2-mod-php php-mysql \
 | `apache2` | Serveur HTTP |
 | `php` + `libapache2-mod-php` | Interpréteur PHP intégré à Apache (mod_php) |
 | `php-mysql` | Pilote de connexion à MySQL — sans lui, WordPress ne démarre pas |
-| `php-gd`, `php-imagick` | Traitement d'images (miniatures) |
+| `php-gd` | Traitement d'images (miniatures) |
 | `php-curl`, `php-xml`, `php-zip` | Requêtes HTTP sortantes, flux RSS, installation d'extensions |
 | `php-mbstring` | Chaînes multi-octets : indispensable pour l'UTF-8 |
 
@@ -1311,12 +1315,16 @@ Durcissement supplémentaire, à ajouter en fin de fichier **avant** la ligne
 
 ```php
 define( 'DISALLOW_FILE_EDIT', true );   // désactive l'éditeur de code de l'admin
-define( 'WP_DEBUG', false );            // aucun message d'erreur affiché en public
 ```
 
 `DISALLOW_FILE_EDIT` supprime l'éditeur de thèmes/extensions du tableau de bord :
 sans lui, un compte administrateur compromis permet d'écrire du PHP arbitraire
 sur le serveur en trois clics.
+
+> Ne pas ajouter `WP_DEBUG` ici : `wp-config-sample.php` le définit déjà plus haut
+> dans le fichier. Un second `define()` déclencherait un avertissement PHP à chaque
+> requête (`Constant WP_DEBUG already defined`), qui deviendra une erreur fatale
+> avec PHP 9.
 
 ### 9.5 Rendre wp-config.php inaccessible publiquement
 
@@ -1464,10 +1472,16 @@ sudo nano /usr/local/bin/backup-wordpress.sh
 
 set -euo pipefail
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+umask 077
 
 DB_NAME="wordpress"
 BACKUP_DIR="/backup"
 LOG_FILE="/var/log/backup.log"
+
+# Le journal doit rester lisible sans sudo (la grille fait un simple cat),
+# meme s il vient d etre supprime : umask 077 le recreerait en 600.
+touch "$LOG_FILE"
+chmod 644 "$LOG_FILE"
 FTP_GROUP="nami"
 RETENTION_DAYS=30
 
@@ -1529,6 +1543,8 @@ immédiate**.
 | `set -e` | Arrête le script dès qu'une commande échoue. Sans cela, un `mysqldump` en erreur produirait une archive vide, silencieusement |
 | `set -u` | Erreur si une variable non définie est utilisée (protège des fautes de frappe) |
 | `set -o pipefail` | Un pipeline échoue si **n'importe laquelle** de ses commandes échoue, pas seulement la dernière |
+| `umask 077` | Les fichiers créés par le script — notamment le dump SQL temporaire dans `/tmp`, qui contient les condensats de mots de passe WordPress — naissent en `600` : illisibles par les autres utilisateurs pendant la fenêtre où ils existent |
+| `touch` + `chmod 644` sur le journal | Garantit que `/var/log/backup.log` reste lisible **sans sudo** (la grille d'audit le lit avec un simple `cat`), même si l'auditeur vient de le supprimer — sans cela, `umask 077` le recréerait en `600` |
 | `export PATH=...` | **Indispensable en cron** : cron fournit un environnement minimal, souvent sans `/usr/bin`. Un script qui marche en interactif peut échouer en cron pour cette seule raison |
 | `trap '...' ERR` | Installe un gestionnaire d'erreur : toute commande en échec déclenche `on_error`, qui journalise l'échec et nettoie le fichier temporaire. `$LINENO` donne la ligne fautive |
 | `date +%F_%H-%M-%S` | Format `2026-08-25_00-00-01`. `%F` = `%Y-%m-%d` (format ISO 8601, donc **triable alphabétiquement**). **Exigence du sujet** : la date est dans le nom du fichier |
@@ -2286,7 +2302,7 @@ dpkg-query: no packages found matching ubuntu-desktop
 
 ```console
 $ cat /etc/os-release | head -2
-PRETTY_NAME="Ubuntu 24.04.3 LTS"
+PRETTY_NAME="Ubuntu 26.04.1 LTS"
 NAME="Ubuntu"
 
 $ lsblk -o NAME,FSTYPE,SIZE,MOUNTPOINT /dev/sda
